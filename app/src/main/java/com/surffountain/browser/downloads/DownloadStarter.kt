@@ -24,18 +24,33 @@ object DownloadStarter {
         mimeType: String?
     ): Pair<Long, String> {
         val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
+
         val request = DownloadManager.Request(Uri.parse(url)).apply {
             setTitle(fileName)
-            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-            setAllowedOverMeteredNetwork(true)
+            setNotificationVisibility(
+                DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+            )
+            setDestinationInExternalPublicDir(
+                Environment.DIRECTORY_DOWNLOADS,
+                fileName
+            )
+
+            setAllowedOverMetered(true)
             setAllowedOverRoaming(true)
+
             val cookie = CookieManager.getInstance().getCookie(url)
-            if (!cookie.isNullOrBlank()) addRequestHeader("Cookie", cookie)
-            if (!userAgent.isNullOrBlank()) addRequestHeader("User-Agent", userAgent)
+            if (!cookie.isNullOrBlank()) {
+                addRequestHeader("Cookie", cookie)
+            }
+
+            if (!userAgent.isNullOrBlank()) {
+                addRequestHeader("User-Agent", userAgent)
+            }
         }
+
         val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val systemId = manager.enqueue(request)
+
         return systemId to fileName
     }
 }
