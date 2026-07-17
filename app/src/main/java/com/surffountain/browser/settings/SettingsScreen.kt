@@ -93,11 +93,11 @@ fun SettingsScreen(
             }
             item {
                 SettingsRow(stringResource(R.string.settings_pdl_ai), stringResource(R.string.settings_pdl_ai_summary)) {
-                    soon(context.getString(R.string.settings_pdl_ai))
+                    soon(stringResource(R.string.settings_pdl_ai))
                 }
             }
-            item { StubRow(stringResource(R.string.settings_news)) { soon(context.getString(R.string.settings_news)) } }
-            item { StubRow(stringResource(R.string.settings_vpn)) { soon(context.getString(R.string.settings_vpn)) } }
+            item { StubRow(stringResource(R.string.settings_news)) { soon(stringResource(R.string.settings_news)) } }
+            item { StubRow(stringResource(R.string.settings_vpn)) { soon(stringResource(R.string.settings_vpn)) } }
 
             item { SectionHeader(stringResource(R.string.settings_general)) }
             item {
@@ -110,7 +110,7 @@ fun SettingsScreen(
                     onConfirm = { viewModel.setHomePageUrl(homePageText.ifBlank { SettingsDataStore.HOME_SENTINEL }) }
                 )
             }
-            item { StubRow(stringResource(R.string.settings_sync)) { soon(context.getString(R.string.settings_sync)) } }
+            item { StubRow(stringResource(R.string.settings_sync)) { soon(stringResource(R.string.settings_sync)) } }
             item {
                 SettingsRow(stringResource(R.string.settings_notifications), null) {
                     runCatching {
@@ -121,7 +121,7 @@ fun SettingsScreen(
                     }
                 }
             }
-            item { StubRow(stringResource(R.string.settings_site_settings)) { soon(context.getString(R.string.settings_site_settings)) } }
+            item { StubRow(stringResource(R.string.settings_site_settings)) { soon(stringResource(R.string.settings_site_settings)) } }
             item {
                 SettingsRow(stringResource(R.string.settings_clear_data), stringResource(R.string.settings_clear_data_summary)) {
                     showClearDataConfirm = true
@@ -143,13 +143,13 @@ fun SettingsScreen(
                     ThemeOption(AppTheme.DARK, stringResource(R.string.settings_theme_dark), theme, viewModel::setTheme)
                 }
             }
-            item { StubRow(stringResource(R.string.settings_tabs_groups)) { soon(context.getString(R.string.settings_tabs_groups)) } }
-            item { StubRow(stringResource(R.string.settings_new_tab_page)) { soon(context.getString(R.string.settings_new_tab_page)) } }
-            item { StubRow(stringResource(R.string.settings_accessibility)) { soon(context.getString(R.string.settings_accessibility)) } }
+            item { StubRow(stringResource(R.string.settings_tabs_groups)) { soon(stringResource(R.string.settings_tabs_groups)) } }
+            item { StubRow(stringResource(R.string.settings_new_tab_page)) { soon(stringResource(R.string.settings_new_tab_page)) } }
+            item { StubRow(stringResource(R.string.settings_accessibility)) { soon(stringResource(R.string.settings_accessibility)) } }
 
             item { SectionHeader(stringResource(R.string.settings_passwords_autofill)) }
-            item { StubRow(stringResource(R.string.settings_password_manager)) { soon(context.getString(R.string.settings_password_manager)) } }
-            item { StubRow(stringResource(R.string.settings_autofill)) { soon(context.getString(R.string.settings_autofill)) } }
+            item { StubRow(stringResource(R.string.settings_password_manager)) { soon(stringResource(R.string.settings_password_manager)) } }
+            item { StubRow(stringResource(R.string.settings_autofill)) { soon(stringResource(R.string.settings_autofill)) } }
 
             item { SectionHeader(stringResource(R.string.settings_exclusive)) }
             item {
@@ -159,12 +159,12 @@ fun SettingsScreen(
                     onClick = onNavigateToBookmarks
                 )
             }
-            item { StubRow(stringResource(R.string.settings_content_downloader)) { soon(context.getString(R.string.settings_content_downloader)) } }
+            item { StubRow(stringResource(R.string.settings_content_downloader)) { soon(stringResource(R.string.settings_content_downloader)) } }
             item {
                 SettingsRow(
                     stringResource(R.string.settings_privacy_digest),
                     stringResource(R.string.settings_privacy_digest_summary)
-                ) { soon(context.getString(R.string.settings_privacy_digest)) }
+                ) { soon(stringResource(R.string.settings_privacy_digest)) }
             }
 
             item { SectionHeader(stringResource(R.string.settings_support)) }
