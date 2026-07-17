@@ -1,0 +1,108 @@
+name: CI
+
+# Every push/PR gets linted, tested, and built into a debug APK. This never
+# requires Android Studio, a local SDK, or anything beyond what this
+# workflow installs itself.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Lint, test, and build debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Pinned explicitly rather than left to "latest" — AGP 8.x and
+      # Gradle 9.x don't mix (see docs/SIGNING.md / the Gradle-version note
+      # in gradle/wrapper/gradle-wrapper.properties). If this exact line is
+      # ever the first thing that fails, that's the version to bump.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      # Every build — debug included — is signed with the one persistent
+      # keystore (see app/build.gradle.kts). This used to fall back
+      # silently to AGP's own throwaway debug keystore when the secrets
+      # below weren't set, which is *exactly* what caused a real
+      # "package conflicts with an existing package" install failure: two
+      # debug builds from two different runs, two different auto-generated
+      # keys. It no longer falls back — this step fails loudly instead, so
+      # that can't happen silently again.
+      - name: Configure signing (required — see docs/SIGNING.md)
+        env:
+          SF_KEYSTORE_BASE64: ${{ secrets.SF_KEYSTORE_BASE64 }}
+          SF_KEYSTORE_PASSWORD: ${{ secrets.SF_KEYSTORE_PASSWORD }}
+          SF_KEY_ALIAS: ${{ secrets.SF_KEY_ALIAS }}
+          SF_KEY_PASSWORD: ${{ secrets.SF_KEY_PASSWORD }}
+        run: |
+          if [ -z "$SF_KEYSTORE_BASE64" ]; then
+            echo "## :x: Signing secrets are not configured" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "This build was stopped on purpose. Building without the persisted" >> "$GITHUB_STEP_SUMMARY"
+            echo "keystore is exactly what causes **\"package conflicts with an existing" >> "$GITHUB_STEP_SUMMARY"
+            echo "package\"** when you go to install the next update." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**Fix (one-time, from Termux):**" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "scripts/create_keystore.sh" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "Then add the 4 secrets it prints at:" >> "$GITHUB_STEP_SUMMARY"
+            echo "Settings > Secrets and variables > Actions on this repo." >> "$GITHUB_STEP_SUMMARY"
+            echo "Full detail: docs/SIGNING.md." >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::SF_KEYSTORE_BASE64 is not set — run scripts/create_keystore.sh and add the 4 secrets it prints (docs/SIGNING.md). Builds are intentionally blocked until then to avoid the exact 'package conflicts' bug this exists to prevent."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/keystore"
+          echo "$SF_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/keystore/surffountain.jks"
+          {
+            echo "SF_KEYSTORE_PATH=$RUNNER_TEMP/keystore/surffountain.jks"
+            echo "SF_KEYSTORE_PASSWORD=$SF_KEYSTORE_PASSWORD"
+            echo "SF_KEY_ALIAS=$SF_KEY_ALIAS"
+            echo "SF_KEY_PASSWORD=$SF_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Lint
+        run: gradle lintDebug --no-daemon
+
+      - name: Unit tests
+        run: gradle testDebugUnitTest --no-daemon
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: surf-fountain-debug-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload test + lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-${{ github.run_number }}
+          path: |
+            app/build/reports/
+          if-no-files-found: ignore

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Auto Backup (API < 31) rules. Nothing sensitive is excluded yet because
+     Phase 0 has nothing sensitive to store; passwords/autofill data gets an
+     explicit exclusion here the moment the Password Manager phase lands. -->
+<full-backup-content>
+</full-backup-content>

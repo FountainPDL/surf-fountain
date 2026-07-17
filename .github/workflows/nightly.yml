@@ -1,0 +1,97 @@
+name: Nightly
+
+# A debug build every night, purely so there's always a recent APK to
+# sideload without waiting on a manual release. Skips itself automatically
+# if nothing changed since the last nightly (no point re-publishing an
+# identical APK).
+
+on:
+  schedule:
+    - cron: '0 9 * * *'   # 09:00 UTC daily
+  workflow_dispatch:
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  nightly:
+    name: Nightly debug build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for new commits since last nightly tag
+        id: changes
+        run: |
+          if git rev-parse nightly >/dev/null 2>&1; then
+            if [ -z "$(git log nightly..HEAD --oneline)" ]; then
+              echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up JDK 21
+        if: steps.changes.outputs.has_changes == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        if: steps.changes.outputs.has_changes == 'true'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Configure signing (required — see docs/SIGNING.md)
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          SF_KEYSTORE_BASE64: ${{ secrets.SF_KEYSTORE_BASE64 }}
+          SF_KEYSTORE_PASSWORD: ${{ secrets.SF_KEYSTORE_PASSWORD }}
+          SF_KEY_ALIAS: ${{ secrets.SF_KEY_ALIAS }}
+          SF_KEY_PASSWORD: ${{ secrets.SF_KEY_PASSWORD }}
+        run: |
+          if [ -z "$SF_KEYSTORE_BASE64" ]; then
+            echo "::error::SF_KEYSTORE_BASE64 is not set — run scripts/create_keystore.sh and add the 4 secrets it prints (docs/SIGNING.md). Nightly is intentionally blocked until then."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/keystore"
+          echo "$SF_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/keystore/surffountain.jks"
+          {
+            echo "SF_KEYSTORE_PATH=$RUNNER_TEMP/keystore/surffountain.jks"
+            echo "SF_KEYSTORE_PASSWORD=$SF_KEYSTORE_PASSWORD"
+            echo "SF_KEY_ALIAS=$SF_KEY_ALIAS"
+            echo "SF_KEY_PASSWORD=$SF_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build debug APK
+        if: steps.changes.outputs.has_changes == 'true'
+        run: gradle assembleDebug --no-daemon
+
+      - name: Move nightly tag
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git tag -f nightly
+          git push origin nightly --force
+
+      - name: Publish nightly release
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete nightly --yes || true
+          gh release create nightly \
+            app/build/outputs/apk/debug/*.apk \
+            --title "Nightly (build ${{ github.run_number }})" \
+            --notes "Automated nightly debug build. Not signed for production use until secrets are configured — see docs/SIGNING.md." \
+            --prerelease

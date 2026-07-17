@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Post-splash / pre-Compose placeholder theme. Compose's own
+         SurfFountainTheme (ui/theme/Theme.kt) takes over the instant
+         setContent runs; this only controls the window background for the
+         brief moment before that first frame. -->
+    <style name="Theme.SurfFountain" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/background_light</item>
+        <!-- Ignored once targetSdk enforces edge-to-edge (API 35+), but
+             still respected on API 29-34, so kept for those devices. -->
+        <item name="android:statusBarColor">@color/background_light</item>
+        <item name="android:navigationBarColor">@color/background_light</item>
+    </style>
+
+    <style name="Theme.SurfFountain.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.SurfFountain</item>
+    </style>
+</resources>

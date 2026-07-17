@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     A browser has to be able to at least attempt plain-http sites - that's
+     different from a normal app, where blocking cleartext by default is
+     the right call. We allow cleartext at the platform level here, and
+     enforce "HTTPS only mode" / HTTPS-upgrade as an in-app WebViewClient
+     policy instead (Privacy phase), the same way Chrome/Brave do it rather
+     than relying on the OS to block it outright.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

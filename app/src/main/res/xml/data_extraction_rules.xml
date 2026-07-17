@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cloud backup + device transfer rules (API 31+). Same note as
+     backup_rules.xml: revisit the moment Password Manager / encrypted
+     storage exist. -->
+<data-extraction-rules>
+    <cloud-backup>
+    </cloud-backup>
+    <device-transfer>
+    </device-transfer>
+</data-extraction-rules>

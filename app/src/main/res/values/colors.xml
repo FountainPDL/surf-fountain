@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Only what XML (non-Compose) resources need: the adaptive icon
+         background, the splash screen background, and the two manifest
+         theme backgrounds. The real Material 3 palette Compose uses lives
+         in ui/theme/Color.kt. -->
+    <color name="ic_launcher_background">#000000</color>
+    <color name="splash_background">#000000</color>
+    <color name="background_light">#FFFFFF</color>
+    <color name="background_dark">#000000</color>
+</resources>

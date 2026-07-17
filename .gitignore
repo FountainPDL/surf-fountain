@@ -1,0 +1,31 @@
+# Gradle
+.gradle/
+build/
+app/build/
+*/build/
+
+# Local configuration
+local.properties
+
+# Keystores — NEVER commit these. CI decodes them from secrets at build time.
+*.jks
+*.keystore
+keystore.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Logs
+*.log
+
+# Room schemas history (kept for migration reference, but generated dirs can get noisy)
+# Uncomment if you don't want schema JSON tracked:
+# app/schemas/
+
+# Termux / shell
+*.bak
