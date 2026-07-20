@@ -3,7 +3,6 @@ package com.surffountain.browser.browser
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.view.ViewGroup
@@ -42,11 +41,16 @@ import com.surffountain.browser.ui.components.ComingSoonDialog
 import com.surffountain.browser.ui.components.SoonBadge
 
 /**
- * Hosts exactly one live WebView for the whole browsing session, reused
- * across every tab (loadUrl for a fresh tab, saveState/restoreState when
- * switching to one that's already been visited) rather than keeping one
- * WebView per tab alive — see BrowserViewModel's kdoc for the full
- * protocol this composable implements.
+ * Hosts exactly one live WebView for the whole browsing session, and it
+ * stays mounted for BrowserScreen's entire lifetime — Home is drawn as an
+ * opaque overlay ON TOP of it when the active tab is on
+ * SettingsDataStore.HOME_SENTINEL, not swapped in by removing the WebView
+ * from composition. An earlier version did the latter (if/else between
+ * HomeScreen and AndroidView), which disposed and recreated the WebView
+ * every time the user opened a new tab or hit Home — that's what was
+ * actually behind back/forward "not working" (a fresh WebView has no
+ * history) and tabs appearing to bleed into each other. One WebView,
+ * created once, for as long as this screen exists, is the fix.
  */
 @SuppressLint("SetJavaScriptEnabled")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -72,6 +76,7 @@ fun BrowserScreen(
     var menuExpanded by remember { mutableStateOf(false) }
     var showShieldsPanel by remember { mutableStateOf(false) }
     var comingSoonFeature by remember { mutableStateOf<String?>(null) }
+    var isFullscreen by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val privateTabsLabel = stringResource(R.string.menu_new_private_tab)
     val tabGroupsLabel = stringResource(R.string.menu_add_to_group)
@@ -81,15 +86,15 @@ fun BrowserScreen(
         activeTab.url == SettingsDataStore.HOME_SENTINEL ||
         activeTab.url.isBlank()
 
-    // System/predictive back: let the page's own history win first: only
-    // fall through to "go to New Tab" once the live WebView has nothing
-    // left to go back to.
-    BackHandler(enabled = !isHome || canGoBack) {
-        val wv = webViewRef.value
-        if (wv != null && wv.canGoBack()) {
-            wv.goBack()
-        } else {
-            viewModel.navigateActiveTabTo(SettingsDataStore.HOME_SENTINEL)
+    // Fullscreen consumes the first back-press (there's no toolbar visible
+    // to tap an exit button on, so this is the expected way out). Otherwise
+    // the page's own history wins, falling through to "go to New Tab" once
+    // the WebView has nothing left to go back to.
+    BackHandler(enabled = isFullscreen || !isHome || canGoBack) {
+        when {
+            isFullscreen -> isFullscreen = false
+            webViewRef.value?.canGoBack() == true -> webViewRef.value?.goBack()
+            else -> viewModel.navigateActiveTabTo(SettingsDataStore.HOME_SENTINEL)
         }
     }
 
@@ -119,129 +124,147 @@ fun BrowserScreen(
 
     Scaffold(
         bottomBar = {
-            // navigationBarsPadding keeps the toolbar clear of both the
-            // gesture-nav pill and the classic 3-button bar — whichever the
-            // device is actually using, this reads the correct inset for it.
-            Box(modifier = Modifier.navigationBarsPadding()) {
-                AddressBar(
-                    displayUrl = activeTab?.url?.takeUnless {
-                        it == SettingsDataStore.HOME_SENTINEL
-                    } ?: "",
-                    isSecure = activeTab?.url?.startsWith("https://") == true,
-                    isLoading = activeTab?.isLoading == true,
-                    progress = activeTab?.progress ?: 0,
-                    isBookmarked = isBookmarked,
-                    tabCount = uiState.tabs.size,
-                    canGoBack = canGoBack,
-                    canGoForward = canGoForward,
-                    shieldsEnabled = shieldsEnabled,
-                    blockedCount = activeTab?.blockedCount ?: 0,
-                    onSubmit = { input -> viewModel.submitAddressBarInput(input) },
-                    onToggleBookmark = viewModel::toggleBookmarkForActiveTab,
-                    onTabsClick = viewModel::showTabSwitcher,
-                    onBack = { webViewRef.value?.let { if (it.canGoBack()) it.goBack() } },
-                    onForward = { webViewRef.value?.let { if (it.canGoForward()) it.goForward() } },
-                    onReload = { webViewRef.value?.reload() },
-                    onMenuClick = { menuExpanded = true },
-                    onShieldsClick = { showShieldsPanel = true }
-                )
-                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.tabs_new_tab)) },
-                        onClick = { menuExpanded = false; viewModel.openNewTab() }
+            if (!isFullscreen) {
+                // navigationBarsPadding keeps the toolbar clear of both the
+                // gesture-nav pill and the classic 3-button bar.
+                Box(modifier = Modifier.navigationBarsPadding()) {
+                    AddressBar(
+                        displayUrl = activeTab?.url?.takeUnless {
+                            it == SettingsDataStore.HOME_SENTINEL
+                        } ?: "",
+                        isSecure = activeTab?.url?.startsWith("https://") == true,
+                        isLoading = activeTab?.isLoading == true,
+                        progress = activeTab?.progress ?: 0,
+                        isBookmarked = isBookmarked,
+                        tabCount = uiState.tabs.size,
+                        canGoBack = canGoBack,
+                        canGoForward = canGoForward,
+                        shieldsEnabled = shieldsEnabled,
+                        blockedCount = activeTab?.blockedCount ?: 0,
+                        onSubmit = { input -> viewModel.submitAddressBarInput(input) },
+                        onToggleBookmark = viewModel::toggleBookmarkForActiveTab,
+                        onTabsClick = viewModel::showTabSwitcher,
+                        onBack = { webViewRef.value?.let { if (it.canGoBack()) it.goBack() } },
+                        onForward = { webViewRef.value?.let { if (it.canGoForward()) it.goForward() } },
+                        onHome = { viewModel.navigateActiveTabTo(SettingsDataStore.HOME_SENTINEL) },
+                        onReload = { webViewRef.value?.reload() },
+                        onMenuClick = { menuExpanded = true },
+                        onShieldsClick = { showShieldsPanel = true }
                     )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.menu_new_private_tab)) },
-                        trailingIcon = { SoonBadge() },
-                        onClick = { menuExpanded = false; comingSoonFeature = privateTabsLabel }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.menu_add_to_group)) },
-                        trailingIcon = { SoonBadge() },
-                        onClick = { menuExpanded = false; comingSoonFeature = tabGroupsLabel }
-                    )
-                    HorizontalDivider()
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.nav_history)) },
-                        onClick = { menuExpanded = false; onNavigateToHistory() }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.downloads_title)) },
-                        onClick = { menuExpanded = false; onNavigateToDownloads() }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.nav_bookmarks)) },
-                        onClick = { menuExpanded = false; onNavigateToBookmarks() }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.pdl_ai_title)) },
-                        onClick = { menuExpanded = false; onNavigateToPdlAi() }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.menu_recent_tabs)) },
-                        trailingIcon = { SoonBadge() },
-                        onClick = { menuExpanded = false; comingSoonFeature = recentTabsLabel }
-                    )
-                    HorizontalDivider()
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.nav_settings)) },
-                        onClick = { menuExpanded = false; onNavigateToSettings() }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.menu_set_as_default)) },
-                        onClick = {
-                            menuExpanded = false
-                            openDefaultAppsSettings(context)
-                        }
-                    )
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.tabs_new_tab)) },
+                            onClick = { menuExpanded = false; viewModel.openNewTab() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.menu_new_private_tab)) },
+                            trailingIcon = { SoonBadge() },
+                            onClick = { menuExpanded = false; comingSoonFeature = privateTabsLabel }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.menu_add_to_group)) },
+                            trailingIcon = { SoonBadge() },
+                            onClick = { menuExpanded = false; comingSoonFeature = tabGroupsLabel }
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.nav_history)) },
+                            onClick = { menuExpanded = false; onNavigateToHistory() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.downloads_title)) },
+                            onClick = { menuExpanded = false; onNavigateToDownloads() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.nav_bookmarks)) },
+                            onClick = { menuExpanded = false; onNavigateToBookmarks() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.pdl_ai_title)) },
+                            onClick = { menuExpanded = false; onNavigateToPdlAi() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.menu_recent_tabs)) },
+                            trailingIcon = { SoonBadge() },
+                            onClick = { menuExpanded = false; comingSoonFeature = recentTabsLabel }
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.menu_full_screen)) },
+                            onClick = { menuExpanded = false; isFullscreen = true }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.nav_settings)) },
+                            onClick = { menuExpanded = false; onNavigateToSettings() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.menu_set_as_default)) },
+                            onClick = {
+                                menuExpanded = false
+                                openDefaultAppsSettings(context)
+                            }
+                        )
+                    }
                 }
             }
         }
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { factoryContext ->
+                    WebView(factoryContext).also { webView ->
+                        webView.layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        webView.settings.javaScriptEnabled = true
+                        webView.settings.domStorageEnabled = true
+                        webView.settings.setSupportZoom(true)
+                        webView.settings.builtInZoomControls = true
+                        webView.settings.displayZoomControls = false
+                        webView.settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                        webView.webViewClient = SurfFountainWebViewClient(
+                            listener = viewModel,
+                            isShieldsEnabled = { viewModel.shieldsEnabled.value },
+                            onDownloadUrl = { url ->
+                                handleDownload(
+                                    context = factoryContext,
+                                    webView = webView,
+                                    url = url,
+                                    userAgent = webView.settings.userAgentString,
+                                    contentDisposition = null,
+                                    mimeType = null,
+                                    viewModel = viewModel
+                                )
+                            }
+                        )
+                        webView.webChromeClient = SurfFountainWebChromeClient(viewModel)
+                        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+                            handleDownload(
+                                context = factoryContext,
+                                webView = webView,
+                                url = url,
+                                userAgent = userAgent,
+                                contentDisposition = contentDisposition,
+                                mimeType = mimeType,
+                                viewModel = viewModel
+                            )
+                        }
+                        webViewRef.value = webView
+                    }
+                },
+                update = { wv ->
+                    canGoBack = wv.canGoBack()
+                    canGoForward = wv.canGoForward()
+                }
+            )
+
             if (isHome) {
                 HomeScreen(
                     totalBlockedCount = totalBlockedCount,
                     onSubmitQuery = { query -> viewModel.submitAddressBarInput(query) },
                     onOpenPdlAi = onNavigateToPdlAi
-                )
-            } else {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { context ->
-                        WebView(context).apply {
-                            layoutParams = ViewGroup.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.setSupportZoom(true)
-                            settings.builtInZoomControls = true
-                            settings.displayZoomControls = false
-                            settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                            webViewClient = SurfFountainWebViewClient(
-                                listener = viewModel,
-                                isShieldsEnabled = { viewModel.shieldsEnabled.value }
-                            )
-                            webChromeClient = SurfFountainWebChromeClient(viewModel)
-                            setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
-                                val (systemId, fileName) = DownloadStarter.enqueue(
-                                    context = context,
-                                    url = url,
-                                    userAgent = userAgent,
-                                    contentDisposition = contentDisposition,
-                                    mimeType = mimeType
-                                )
-                                viewModel.recordDownload(systemId, url, fileName, mimeType)
-                            }
-                            webViewRef.value = this
-                        }
-                    },
-                    update = { wv ->
-                        canGoBack = wv.canGoBack()
-                        canGoForward = wv.canGoForward()
-                    }
                 )
             }
 
@@ -275,6 +298,35 @@ fun BrowserScreen(
     comingSoonFeature?.let { feature ->
         ComingSoonDialog(featureName = feature, onDismiss = { comingSoonFeature = null })
     }
+}
+
+/**
+ * Common path for both download-detection routes (proactive extension
+ * sniffing in shouldOverrideUrlLoading, and the setDownloadListener
+ * fallback for extensionless URLs). stopLoading() is the fix for the
+ * black-screen/reload-loop bug: without it, the WebView is left partway
+ * through navigating to a URL that was never actually a page — either
+ * showing nothing or, depending on the site, retrying indefinitely.
+ */
+private fun handleDownload(
+    context: Context,
+    webView: WebView,
+    url: String,
+    userAgent: String?,
+    contentDisposition: String?,
+    mimeType: String?,
+    viewModel: BrowserViewModel
+) {
+    webView.stopLoading()
+    viewModel.onDownloadDetected()
+    val (systemId, fileName) = DownloadStarter.enqueue(
+        context = context,
+        url = url,
+        userAgent = userAgent,
+        contentDisposition = contentDisposition,
+        mimeType = mimeType
+    )
+    viewModel.recordDownload(systemId, url, fileName, mimeType)
 }
 
 private fun openDefaultAppsSettings(context: Context) {

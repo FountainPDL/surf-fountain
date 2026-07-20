@@ -19,11 +19,21 @@ import java.io.ByteArrayInputStream
  * loads. Main-frame navigations are never blocked here — only a site's own
  * sub-resources — so typing a tracker's domain directly still loads
  * something instead of a blank page.
+ *
+ * Downloads: a URL ending in a well-known download-only extension (.pdf,
+ * .zip, .apk, ...) is intercepted here, BEFORE the WebView ever attempts
+ * to navigate to it. That's the fix for the black-screen/reload-loop bug —
+ * letting WebView actually start "loading" a URL that's really a file
+ * download (rather than a page) is what left it stuck showing nothing.
+ * setDownloadListener (BrowserScreen) remains the fallback for downloads
+ * that only reveal themselves via a Content-Disposition header — a
+ * dynamic URL with no file extension in the path.
  */
 class SurfFountainWebViewClient(
     private val listener: WebViewEventListener,
     private val isShieldsEnabled: () -> Boolean,
-    private val allowlistForCurrentSite: () -> Set<String> = { emptySet() }
+    private val allowlistForCurrentSite: () -> Set<String> = { emptySet() },
+    private val onDownloadUrl: (url: String) -> Unit
 ) : WebViewClient() {
 
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
@@ -52,7 +62,14 @@ class SurfFountainWebViewClient(
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
         val uri = request?.url ?: return false
         return when (uri.scheme) {
-            "http", "https" -> false
+            "http", "https" -> {
+                if (isLikelyDownload(uri.path)) {
+                    onDownloadUrl(uri.toString())
+                    true
+                } else {
+                    false
+                }
+            }
             else -> {
                 try {
                     view?.context?.startActivity(Intent(Intent.ACTION_VIEW, uri))
@@ -62,5 +79,17 @@ class SurfFountainWebViewClient(
                 true
             }
         }
+    }
+
+    private fun isLikelyDownload(path: String?): Boolean {
+        val lower = path?.lowercase() ?: return false
+        return DOWNLOAD_EXTENSIONS.any { lower.endsWith(it) }
+    }
+
+    companion object {
+        private val DOWNLOAD_EXTENSIONS = listOf(
+            ".pdf", ".zip", ".rar", ".7z", ".apk", ".exe", ".dmg", ".iso",
+            ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"
+        )
     }
 }

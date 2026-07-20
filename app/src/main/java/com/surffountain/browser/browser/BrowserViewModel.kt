@@ -62,6 +62,7 @@ class BrowserViewModel @Inject constructor(
     private val _tabs = MutableStateFlow<List<Tab>>(emptyList())
     private val _activeTabId = MutableStateFlow<String?>(null)
     private val _isTabSwitcherVisible = MutableStateFlow(false)
+    private val lastRecordedHistoryUrl = mutableMapOf<String, String>()
 
     val uiState: StateFlow<BrowserUiState> = combine(
         _tabs, _activeTabId, _isTabSwitcherVisible
@@ -108,15 +109,17 @@ class BrowserViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             val saved = tabRepository.getSavedTabs()
-            if (saved.isEmpty()) {
-                openNewTab()
-            } else {
+            if (saved.isNotEmpty()) {
                 val restored = saved.map { entity ->
                     Tab(id = entity.id, url = entity.url, title = entity.title, isPrivate = entity.isPrivate)
                 }
                 _tabs.value = restored
-                _activeTabId.value = restored.first().id
             }
+            // Always open fresh on the New Tab page on cold start, regardless
+            // of what got restored above — those restored tabs are still
+            // there in the tab switcher, just not what's shown first. A
+            // "resume where I left off" Settings toggle is a follow-up.
+            openNewTab()
         }
     }
 
@@ -138,6 +141,7 @@ class BrowserViewModel @Inject constructor(
 
     fun closeTab(tabId: String) {
         flushBlockedCountToTotal(tabId)
+        lastRecordedHistoryUrl.remove(tabId)
         val remaining = _tabs.value.filterNot { it.id == tabId }
         _tabs.value = remaining
         if (_activeTabId.value == tabId) {
@@ -217,11 +221,26 @@ class BrowserViewModel @Inject constructor(
         updateTab(id) { it.copy(url = url, isLoading = false, title = title ?: it.title) }
         persistTabs()
         val tab = _tabs.value.firstOrNull { it.id == id } ?: return
-        if (!tab.isPrivate) {
+        // WebViewClient.onPageFinished genuinely fires more than once for a
+        // single page a human would call "one visit" — once per iframe, and
+        // again as redirects settle. Without this guard each of those wrote
+        // a separate History row, which is exactly the "recorded 3-5 times"
+        // bug. One recorded entry per genuine URL change, per tab.
+        if (!tab.isPrivate && lastRecordedHistoryUrl[id] != url) {
+            lastRecordedHistoryUrl[id] = url
             viewModelScope.launch {
                 historyRepository.recordVisit(tab.url, tab.title.ifBlank { tab.url })
             }
         }
+    }
+
+    /** Called when a download is detected instead of a real page (see
+     *  SurfFountainWebViewClient / BrowserScreen's DownloadListener) — the
+     *  page never actually finished loading as a page, so isLoading would
+     *  otherwise be stuck true forever with nothing to show for it. */
+    fun onDownloadDetected() {
+        val id = _activeTabId.value ?: return
+        updateTab(id) { it.copy(isLoading = false) }
     }
 
     override fun onProgressChanged(progress: Int) {

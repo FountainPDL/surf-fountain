@@ -18,6 +18,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
@@ -62,6 +63,7 @@ fun AddressBar(
     onTabsClick: () -> Unit,
     onBack: () -> Unit,
     onForward: () -> Unit,
+    onHome: () -> Unit,
     onReload: () -> Unit,
     onMenuClick: () -> Unit,
     onShieldsClick: () -> Unit,
@@ -88,6 +90,13 @@ fun AddressBar(
                     tint = if (canGoForward) colorScheme.onSurface else colorScheme.onSurface.copy(alpha = 0.3f)
                 )
             }
+            IconButton(onClick = onHome) {
+                Icon(
+                    Icons.Filled.Home,
+                    contentDescription = stringResource(R.string.nav_home),
+                    tint = colorScheme.onSurface
+                )
+            }
 
             Surface(
                 shape = RoundedCornerShape(20.dp),
@@ -100,17 +109,11 @@ fun AddressBar(
                     shieldsEnabled = shieldsEnabled,
                     blockedCount = blockedCount,
                     onSubmit = onSubmit,
-                    onShieldsClick = onShieldsClick
+                    onShieldsClick = onShieldsClick,
+                    onReload = onReload
                 )
             }
 
-            IconButton(onClick = onReload) {
-                Icon(
-                    Icons.Filled.Refresh,
-                    contentDescription = stringResource(R.string.action_reload),
-                    tint = colorScheme.onSurface
-                )
-            }
             IconButton(onClick = onToggleBookmark) {
                 Icon(
                     Icons.Filled.Star,
@@ -166,7 +169,8 @@ private fun AddressField(
     shieldsEnabled: Boolean,
     blockedCount: Int,
     onSubmit: (String) -> Unit,
-    onShieldsClick: () -> Unit
+    onShieldsClick: () -> Unit,
+    onReload: () -> Unit
 ) {
     var text by remember(displayUrl) { mutableStateOf(TextFieldValue(displayUrl)) }
     val colorScheme = MaterialTheme.colorScheme
@@ -203,6 +207,14 @@ private fun AddressField(
                     onSubmit(text.text)
                 }),
                 modifier = Modifier.fillMaxWidth()
+            )
+        }
+        IconButton(onClick = onReload, modifier = Modifier.size(32.dp)) {
+            Icon(
+                Icons.Filled.Refresh,
+                contentDescription = stringResource(R.string.action_reload),
+                tint = colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
             )
         }
     }

@@ -7,8 +7,10 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,10 +21,17 @@ enum class AppTheme { SYSTEM, LIGHT, DARK }
 /**
  * Small, flat key-value settings. FountainSurf (the in-house search
  * provider) needs a live backend and isn't built yet, so the default
- * search/home engine here is a real, working one (DuckDuckGo, in keeping
- * with "Private" being half the app's tagline) rather than a placeholder
- * URL that goes nowhere. The Search phase adds a proper multi-engine
- * picker; this key is where it plugs in.
+ * search/home engine here is a real, working one rather than a
+ * placeholder URL that goes nowhere. The Search phase adds a proper
+ * multi-engine picker; this key is where it plugs in.
+ *
+ * Every write goes through withContext(NonCancellable): these are all
+ * launched from viewModelScope.launch { ... } call sites, and a
+ * ViewModel's scope gets cancelled the moment its screen is popped —
+ * which happens easily and fast (pick a setting, immediately tap back).
+ * Without NonCancellable, a write racing that cancellation silently never
+ * reaches disk. That was the actual cause of "search engine choice doesn't
+ * take effect" — not a logic bug in the read/write itself.
  */
 @Singleton
 class SettingsDataStore @Inject constructor(
@@ -53,9 +62,8 @@ class SettingsDataStore @Inject constructor(
     }
 
     /** URL template (containing a literal "%s") used to turn a typed or
-     *  home-screen search query into a URL. DuckDuckGo by default, in
-     *  keeping with "Private" being half the app's tagline; becomes a full
-     *  multi-engine picker in the Search phase. */
+     *  home-screen search query into a URL. Google by default; becomes a
+     *  full multi-engine picker in Settings > Search engine. */
     val searchTemplate: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[Keys.SEARCH_TEMPLATE] ?: DEFAULT_SEARCH_TEMPLATE
     }
@@ -66,7 +74,7 @@ class SettingsDataStore @Inject constructor(
         prefs[Keys.SHIELDS_ENABLED] ?: true
     }
 
-    suspend fun setShieldsEnabled(enabled: Boolean) {
+    suspend fun setShieldsEnabled(enabled: Boolean) = writeNonCancellable {
         context.dataStore.edit { it[Keys.SHIELDS_ENABLED] = enabled }
     }
 
@@ -79,9 +87,11 @@ class SettingsDataStore @Inject constructor(
 
     suspend fun addToBlockedCount(delta: Long) {
         if (delta <= 0) return
-        context.dataStore.edit { prefs ->
-            val current = prefs[Keys.TOTAL_BLOCKED_COUNT] ?: 0L
-            prefs[Keys.TOTAL_BLOCKED_COUNT] = current + delta
+        writeNonCancellable {
+            context.dataStore.edit { prefs ->
+                val current = prefs[Keys.TOTAL_BLOCKED_COUNT] ?: 0L
+                prefs[Keys.TOTAL_BLOCKED_COUNT] = current + delta
+            }
         }
     }
 
@@ -93,26 +103,30 @@ class SettingsDataStore @Inject constructor(
         prefs[Keys.PDL_AI_API_KEY] ?: ""
     }
 
-    suspend fun setPdlAiApiKey(key: String) {
+    suspend fun setPdlAiApiKey(key: String) = writeNonCancellable {
         context.dataStore.edit { it[Keys.PDL_AI_API_KEY] = key }
     }
 
-    suspend fun setTheme(theme: AppTheme) {
+    suspend fun setTheme(theme: AppTheme) = writeNonCancellable {
         context.dataStore.edit { it[Keys.THEME] = theme.name }
     }
 
-    suspend fun setHomePageUrl(url: String) {
+    suspend fun setHomePageUrl(url: String) = writeNonCancellable {
         context.dataStore.edit { it[Keys.HOME_PAGE_URL] = url }
     }
 
-    suspend fun setSearchTemplate(template: String) {
+    suspend fun setSearchTemplate(template: String) = writeNonCancellable {
         context.dataStore.edit { it[Keys.SEARCH_TEMPLATE] = template }
+    }
+
+    private suspend fun writeNonCancellable(block: suspend () -> Unit) {
+        withContext(NonCancellable) { block() }
     }
 
     companion object {
         /** Not a real network scheme — recognized by BrowserScreen to mean
          *  "render the native Home composable instead of a WebView". */
         const val HOME_SENTINEL = "surf://home"
-        const val DEFAULT_SEARCH_TEMPLATE = "https://duckduckgo.com/?q=%s"
+        const val DEFAULT_SEARCH_TEMPLATE = "https://www.google.com/search?q=%s"
     }
 }
